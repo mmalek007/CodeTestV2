@@ -35,17 +35,22 @@ class BookingController extends Controller
      */
     public function index(Request $request)
     {
-        if($user_id = $request->get('user_id')) {
-
-            $response = $this->repository->getUsersJobs($user_id);
-
+        // Check if a specific user ID is provided in the request
+        $userId = $request->user_id;
+        if ($userId) {
+            $response = $this->repository->getUsersJobs($userId);
         }
-        elseif($request->__authenticatedUser->user_type == env('ADMIN_ROLE_ID') || $request->__authenticatedUser->user_type == env('SUPERADMIN_ROLE_ID'))
-        {
+        // Check if the authenticated user is an admin or superadmin
+        elseif ($request->__authenticatedUser->user_type == config('constants.ADMIN_ROLE_ID') ||
+            $request->__authenticatedUser->user_type == config('constants.SUPERADMIN_ROLE_ID')) {
             $response = $this->repository->getAll($request);
         }
+        else {
+            // Handle other cases (e.g., unauthorized access)
+            $response = ['error' => 'Unauthorized access'];
+        }
 
-        return response($response);
+        return response()->json($response);
     }
 
     /**
@@ -56,21 +61,37 @@ class BookingController extends Controller
     {
         $job = $this->repository->with('translatorJobRel.user')->find($id);
 
-        return response($job);
+        return response()->json($job);
     }
 
     /**
      * @param Request $request
      * @return mixed
      */
-    public function store(Request $request)
+    public function store($user, $data)
     {
-        $data = $request->all();
+        $validator = Validator::make($data, [
+            'from_language_id' => 'required',
+            'due_date' => 'required_if:immediate,no',
+            'due_time' => 'required_if:immediate,no',
+            'customer_phone_type' => 'required_without:customer_physical_type',
+            'customer_physical_type' => 'required_without:customer_phone_type',
+            'duration' => 'required',
+        ]);
 
+        if ($validator->fails()) {
+            return [
+                'status' => 'fail',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()->toArray(),
+            ];
+        }
+
+        // Other logic for storing the job
         $response = $this->repository->store($request->__authenticatedUser, $data);
 
-        return response($response);
-
+        // Return the response
+        return response()->json($response);
     }
 
     /**
@@ -80,12 +101,17 @@ class BookingController extends Controller
      */
     public function update($id, Request $request)
     {
-        $data = $request->all();
+        // Get authenticated user and request data
         $cuser = $request->__authenticatedUser;
-        $response = $this->repository->updateJob($id, array_except($data, ['_token', 'submit']), $cuser);
+        $data = $request->except(['_token', 'submit']);
 
-        return response($response);
+        // Update the job using the repository method
+        $response = $this->repository->updateJob($id, $data, $cuser);
+
+        // Return the response
+        return response()->json($response);
     }
+
 
     /**
      * @param Request $request
@@ -93,12 +119,10 @@ class BookingController extends Controller
      */
     public function immediateJobEmail(Request $request)
     {
-        $adminSenderEmail = config('app.adminemail');
-        $data = $request->all();
+        $response = $this->repository->storeJobEmail($request->all());
 
-        $response = $this->repository->storeJobEmail($data);
-
-        return response($response);
+        // Return the response
+        return response()->json($response);
     }
 
     /**
@@ -107,13 +131,15 @@ class BookingController extends Controller
      */
     public function getHistory(Request $request)
     {
-        if($user_id = $request->get('user_id')) {
+        $userId = $request->user_id;
 
-            $response = $this->repository->getUsersJobsHistory($user_id, $request);
-            return response($response);
+        if ($userId) {
+            $response = $this->repository->getUsersJobsHistory($userId, $request);
+            // Return the response
+            return response()->json($response);
         }
 
-        return null;
+        return response()->json(false);
     }
 
     /**
@@ -122,12 +148,12 @@ class BookingController extends Controller
      */
     public function acceptJob(Request $request)
     {
-        $data = $request->all();
         $user = $request->__authenticatedUser;
 
-        $response = $this->repository->acceptJob($data, $user);
+        $response = $this->repository->acceptJob($request->all(), $user);
 
-        return response($response);
+        // Return the response
+        return response()->json($response);
     }
 
     public function acceptJobWithId(Request $request)
